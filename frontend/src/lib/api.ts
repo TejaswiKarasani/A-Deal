@@ -39,6 +39,22 @@ export const getDeals = (runId: number) =>
 
 export const getMyDeals = () => api.get("/marketplace/my/deals");
 
+// Admin
+export const createRun = (run: object) => api.post("/admin/runs", run);
+export const updateRun = (runId: number, updates: object) =>
+  api.patch(`/admin/runs/${runId}`, updates);
+export const listAllRuns = () => api.get("/admin/runs");
+export const listUsers = () => api.get("/admin/users");
+export const updateUser = (userId: number, updates: object) =>
+  api.patch(`/admin/users/${userId}`, updates);
+
+// Survey
+export const submitSurvey = (runId: number, payload: object) =>
+  api.post(`/survey/runs/${runId}/submit`, payload);
+export const getMySurvey = (runId: number) => api.get(`/survey/runs/${runId}/my`);
+export const getSurveyAggregate = (runId: number) =>
+  api.get(`/admin/survey/runs/${runId}`);
+
 // Analytics
 export const getRunSummary = (runId: number) =>
   api.get(`/analytics/runs/${runId}/summary`);

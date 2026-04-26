@@ -37,7 +37,10 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(data: dict) -> str:
     expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
-    return jwt.encode({**data, "exp": expire}, settings.secret_key, algorithm=settings.algorithm)
+    payload = {**data, "exp": expire}
+    if "sub" in payload:
+        payload["sub"] = str(payload["sub"])
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:

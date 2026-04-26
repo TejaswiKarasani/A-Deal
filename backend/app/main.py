@@ -9,7 +9,7 @@ from app.database import Base, engine, SessionLocal
 from app.models import User, Run
 from app.services.market_engine import run_agent_turn
 from app.config import settings
-from app.api import auth, onboarding, marketplace, analytics
+from app.api import auth, onboarding, marketplace, analytics, admin, survey
 
 Base.metadata.create_all(bind=engine)
 
@@ -68,6 +68,8 @@ app.include_router(auth.router)
 app.include_router(onboarding.router)
 app.include_router(marketplace.router)
 app.include_router(analytics.router)
+app.include_router(admin.router)
+app.include_router(survey.router)
 
 
 @app.get("/health")

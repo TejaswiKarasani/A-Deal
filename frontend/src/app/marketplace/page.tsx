@@ -9,6 +9,7 @@ export default function MarketplacePage() {
   const [deals, setDeals] = useState<any[]>([]);
   const [myDeals, setMyDeals] = useState<any>({ sold: [], bought: [] });
   const [tab, setTab] = useState<"listings" | "deals" | "mine">("listings");
+  const selectedRunDetails = runs.find((run) => run.id === selectedRun);
 
   useEffect(() => {
     getRuns().then((r) => {
@@ -45,6 +46,15 @@ export default function MarketplacePage() {
           </button>
         ))}
       </div>
+
+      {selectedRunDetails?.status === "closed" && selectedRun && (
+        <a
+          href={`/survey/${selectedRun}`}
+          className="mb-6 inline-block rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold hover:bg-purple-700"
+        >
+          Rate your experience
+        </a>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-4 border-b border-gray-800 mb-6">
