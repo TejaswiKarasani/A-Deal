@@ -88,6 +88,32 @@ def get_negotiation(
     }
 
 
+@router.get("/negotiations/{negotiation_id}")
+def get_negotiation_direct(
+    negotiation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fetch a negotiation by ID without needing the run_id in the URL."""
+    neg = db.query(Negotiation).filter(Negotiation.id == negotiation_id).first()
+    if not neg:
+        raise HTTPException(status_code=404, detail="Negotiation not found")
+    if current_user.id not in (neg.buyer_id, neg.seller_id):
+        raise HTTPException(status_code=403, detail="Not your negotiation")
+    return {
+        "id": neg.id,
+        "status": neg.status,
+        "item": neg.listing.item.name,
+        "buyer_id": neg.buyer_id,
+        "seller_id": neg.seller_id,
+        "round_count": neg.round_count,
+        "messages": [
+            {"role": m.role, "content": m.content, "timestamp": m.timestamp}
+            for m in neg.messages
+        ],
+    }
+
+
 @router.get("/my/deals")
 def my_deals(
     current_user: User = Depends(get_current_user),
