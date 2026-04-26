@@ -17,21 +17,24 @@ export default function Navbar() {
     router.push("/login");
   };
 
+  // Hide on landing / auth pages
+  if (["/" , "/login", "/register"].includes(pathname)) return null;
+
   return (
-    <nav className="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center justify-between">
-      <Link href="/" className="text-white font-bold text-lg tracking-tight">
-        A-Deal
+    <nav className="sticky top-0 z-50 bg-gray-950/80 backdrop-blur border-b border-gray-800 px-6 py-0 flex items-center justify-between h-14">
+      <Link href="/" className="font-black text-white text-lg tracking-tight">
+        A<span className="text-indigo-400">-</span>Deal
       </Link>
 
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-1">
         {links.map((l) => (
           <Link
             key={l.href}
             href={l.href}
-            className={`text-sm transition ${
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${
               pathname.startsWith(l.href)
-                ? "text-white font-semibold"
-                : "text-gray-400 hover:text-white"
+                ? "bg-gray-800 text-white"
+                : "text-gray-400 hover:text-white hover:bg-gray-800/60"
             }`}
           >
             {l.label}
@@ -39,7 +42,7 @@ export default function Navbar() {
         ))}
         <button
           onClick={handleLogout}
-          className="text-sm text-gray-400 hover:text-red-400 transition"
+          className="ml-3 text-sm text-gray-500 hover:text-red-400 transition px-3 py-1.5 rounded-md hover:bg-gray-800/60"
         >
           Logout
         </button>
