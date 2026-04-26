@@ -61,3 +61,8 @@ export const getRunSummary = (runId: number) =>
 
 export const getAgentPerformance = (runId: number) =>
   api.get(`/analytics/runs/${runId}/agents`);
+
+export const getNegotiation = (runId: number, negotiationId: number) =>
+  api.get(`/marketplace/runs/${runId}/negotiations/${negotiationId}`);
+
+export default api;

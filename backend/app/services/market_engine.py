@@ -1,13 +1,5 @@
 """
 Marketplace engine — orchestrates agent turns, routes offers, and closes deals.
-
-The engine runs as an async loop (or scheduled job).
-Each tick it:
-1. Picks the next active agent in round-robin order
-2. Builds the market context for that agent
-3. Asks the agent for an action
-4. Applies the action to the database
-5. Notifies affected parties
 """
 import json
 import logging
@@ -20,6 +12,42 @@ from app.agents.trader import decide_action
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def close_expired_runs(db: Session) -> None:
+    """Close any active runs whose end_at deadline has passed."""
+    now = datetime.now(timezone.utc)
+    expired = (
+        db.query(Run)
+        .filter(Run.status == "active", Run.end_at.isnot(None), Run.end_at < now)
+        .all()
+    )
+    for run in expired:
+        run.status = "closed"
+        logger.info("run_closed run_id=%s name=%s", run.id, run.name)
+    if expired:
+        db.commit()
+
+
+def expire_stale_negotiations(db: Session) -> None:
+    """Expire open negotiations that have hit the round limit."""
+    stale = (
+        db.query(Negotiation)
+        .filter(
+            Negotiation.status == "open",
+            Negotiation.round_count >= settings.max_negotiation_rounds,
+        )
+        .all()
+    )
+    for neg in stale:
+        neg.status = "expired"
+        neg.closed_at = datetime.now(timezone.utc)
+        logger.info(
+            "negotiation_expired negotiation_id=%s run_id=%s rounds=%s",
+            neg.id, neg.run_id, neg.round_count,
+        )
+    if stale:
+        db.commit()
 
 
 def build_market_context(run: Run, db: Session) -> str:
@@ -45,12 +73,11 @@ def build_market_context(run: Run, db: Session) -> str:
 def run_agent_turn(user: User, run: Run, db: Session) -> None:
     """Execute one turn for a single agent in the given run."""
     if not user.system_prompt:
-        logger.warning("User %s has no system prompt — skipping turn", user.id)
+        logger.warning("skipping_turn user_id=%s reason=no_system_prompt", user.id)
         return
 
     market_context = build_market_context(run, db)
 
-    # Gather open negotiations involving this user
     open_negs = (
         db.query(Negotiation)
         .filter(
@@ -62,24 +89,28 @@ def run_agent_turn(user: User, run: Run, db: Session) -> None:
     )
 
     for neg in open_negs:
-        history = [
-            {"role": msg.role, "content": msg.content}
-            for msg in neg.messages
-        ]
+        history = [{"role": msg.role, "content": msg.content} for msg in neg.messages]
         action = decide_action(
             system_prompt=user.system_prompt,
             market_context=market_context,
             negotiation_history=history,
             model=user.agent_model or settings.default_agent_model,
         )
+        logger.info(
+            "agent_action user_id=%s run_id=%s negotiation_id=%s action=%s",
+            user.id, run.id, neg.id, action.get("action"),
+        )
         _apply_action(action, user, neg, run, db)
 
-    # If agent has no open negotiations, it may start a new one or post
     if not open_negs:
         action = decide_action(
             system_prompt=user.system_prompt,
             market_context=market_context,
             model=user.agent_model or settings.default_agent_model,
+        )
+        logger.info(
+            "agent_new_action user_id=%s run_id=%s action=%s",
+            user.id, run.id, action.get("action"),
         )
         _apply_new_action(action, user, run, db)
 
@@ -96,11 +127,15 @@ def _apply_action(
     act = action.get("action")
     msg_text = action.get("message", "")
     offer = action.get("offer_price")
-
     role = "buyer" if negotiation.buyer_id == agent.id else "seller"
 
     if act == "accept":
-        _close_deal(negotiation, offer or _last_offer(negotiation), db)
+        price = offer or _last_offer(negotiation)
+        _close_deal(negotiation, price, db)
+        logger.info(
+            "deal_closed negotiation_id=%s price=%s buyer_id=%s seller_id=%s",
+            negotiation.id, price, negotiation.buyer_id, negotiation.seller_id,
+        )
     elif act == "reject":
         negotiation.status = "rejected"
         negotiation.closed_at = datetime.now(timezone.utc)
@@ -110,12 +145,16 @@ def _apply_action(
         if negotiation.round_count >= settings.max_negotiation_rounds:
             negotiation.status = "expired"
             negotiation.closed_at = datetime.now(timezone.utc)
+            logger.info(
+                "negotiation_expired negotiation_id=%s max_rounds=%s",
+                negotiation.id, settings.max_negotiation_rounds,
+            )
         else:
             _add_message(negotiation, agent.id, role, msg_text, db)
     elif act == "pass":
         pass
     else:
-        logger.debug("Unknown action %s from agent %s", act, agent.id)
+        logger.debug("unknown_action action=%s user_id=%s", act, agent.id)
 
 
 def _apply_new_action(action: dict, agent: User, run: Run, db: Session) -> None:
@@ -141,6 +180,10 @@ def _apply_new_action(action: dict, agent: User, run: Run, db: Session) -> None:
         db.add(neg)
         db.flush()
         _add_message(neg, agent.id, "buyer", action.get("message", ""), db)
+        logger.info(
+            "negotiation_started buyer_id=%s seller_id=%s listing_id=%s run_id=%s",
+            agent.id, listing.agent_id, listing.id, run.id,
+        )
 
 
 def _close_deal(negotiation: Negotiation, price: float, db: Session) -> None:

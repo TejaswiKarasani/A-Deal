@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Navbar from "@/components/Navbar";
 
 export const metadata: Metadata = {
   title: "A-Deal — AI Agent Marketplace",
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className="bg-gray-950 text-white">
+        <Navbar />
+        {children}
+      </body>
     </html>
   );
 }

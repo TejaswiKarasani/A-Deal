@@ -4,20 +4,42 @@ LLM provider abstraction — NIMProvider and AnthropicProvider expose the same i
   .stream()  — async streaming (real-time interview UI)
   .extract() — non-streaming, higher token budget (JSON profile extraction)
   .decide()  — non-streaming, low token budget (trader action decisions)
+
+Both providers include exponential-backoff retry on rate-limit / server errors.
 """
+import logging
+import time
 from typing import AsyncGenerator
+
+logger = logging.getLogger(__name__)
+
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+_MAX_RETRIES = 3
+_BACKOFF_BASE = 2  # seconds — doubles each attempt: 2s, 4s, 8s
+
+
+def _retry_sync(fn, label: str):
+    """Call fn() up to _MAX_RETRIES times with exponential backoff on retryable errors."""
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status not in _RETRYABLE_STATUS and attempt == _MAX_RETRIES:
+                raise
+            if status not in _RETRYABLE_STATUS:
+                raise
+            wait = _BACKOFF_BASE ** attempt
+            logger.warning(
+                "llm_retry label=%s attempt=%s/%s status=%s wait=%ss error=%s",
+                label, attempt, _MAX_RETRIES, status, wait, exc,
+            )
+            time.sleep(wait)
+    raise RuntimeError(f"All {_MAX_RETRIES} retries failed for {label}")
 
 
 class NIMProvider:
-    """
-    OpenAI-SDK client pointed at NVIDIA NIM.
-    NIM is OpenAI-API-compatible — same message format, same create() call.
-
-    Key differences vs Anthropic:
-    - system prompt goes as first message {"role":"system"} not a separate kwarg
-    - response text is at choices[0].message.content
-    - streaming chunks at choices[0].delta.content (can be None on final chunk)
-    """
+    """OpenAI-SDK client pointed at NVIDIA NIM (OpenAI-API-compatible)."""
 
     def __init__(
         self,
@@ -38,12 +60,14 @@ class NIMProvider:
         return [{"role": "system", "content": system}] + messages
 
     def chat(self, system: str, messages: list[dict], max_tokens: int = 1024) -> str:
-        resp = self._client.chat.completions.create(
-            model=self._interview_model,
-            max_tokens=max_tokens,
-            messages=self._with_system(system, messages),
+        return _retry_sync(
+            lambda: self._client.chat.completions.create(
+                model=self._interview_model,
+                max_tokens=max_tokens,
+                messages=self._with_system(system, messages),
+            ).choices[0].message.content,
+            label="nim.chat",
         )
-        return resp.choices[0].message.content
 
     async def stream(
         self, system: str, messages: list[dict], max_tokens: int = 1024
@@ -60,28 +84,28 @@ class NIMProvider:
                 yield delta
 
     def extract(self, system: str, messages: list[dict], max_tokens: int = 2048) -> str:
-        resp = self._client.chat.completions.create(
-            model=self._extraction_model,
-            max_tokens=max_tokens,
-            messages=self._with_system(system, messages),
+        return _retry_sync(
+            lambda: self._client.chat.completions.create(
+                model=self._extraction_model,
+                max_tokens=max_tokens,
+                messages=self._with_system(system, messages),
+            ).choices[0].message.content,
+            label="nim.extract",
         )
-        return resp.choices[0].message.content
 
     def decide(self, system: str, messages: list[dict], max_tokens: int = 512) -> str:
-        resp = self._client.chat.completions.create(
-            model=self._trader_model,
-            max_tokens=max_tokens,
-            messages=self._with_system(system, messages),
+        return _retry_sync(
+            lambda: self._client.chat.completions.create(
+                model=self._trader_model,
+                max_tokens=max_tokens,
+                messages=self._with_system(system, messages),
+            ).choices[0].message.content,
+            label="nim.decide",
         )
-        return resp.choices[0].message.content
 
 
 class AnthropicProvider:
-    """
-    Wraps the Anthropic SDK — zero behaviour change from the original code.
-    Uses AsyncAnthropic for the streaming path so both providers share the same
-    async interface.
-    """
+    """Wraps the Anthropic SDK with the same interface as NIMProvider."""
 
     def __init__(self, api_key: str, interview_model: str, trader_model: str):
         import anthropic
@@ -91,13 +115,15 @@ class AnthropicProvider:
         self._trader_model = trader_model
 
     def chat(self, system: str, messages: list[dict], max_tokens: int = 1024) -> str:
-        resp = self._client.messages.create(
-            model=self._interview_model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=messages,
+        return _retry_sync(
+            lambda: self._client.messages.create(
+                model=self._interview_model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+            ).content[0].text,
+            label="anthropic.chat",
         )
-        return resp.content[0].text
 
     async def stream(
         self, system: str, messages: list[dict], max_tokens: int = 1024
@@ -112,19 +138,23 @@ class AnthropicProvider:
                 yield text
 
     def extract(self, system: str, messages: list[dict], max_tokens: int = 2048) -> str:
-        resp = self._client.messages.create(
-            model=self._interview_model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=messages,
+        return _retry_sync(
+            lambda: self._client.messages.create(
+                model=self._interview_model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+            ).content[0].text,
+            label="anthropic.extract",
         )
-        return resp.content[0].text
 
     def decide(self, system: str, messages: list[dict], max_tokens: int = 512) -> str:
-        resp = self._client.messages.create(
-            model=self._trader_model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=messages,
+        return _retry_sync(
+            lambda: self._client.messages.create(
+                model=self._trader_model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+            ).content[0].text,
+            label="anthropic.decide",
         )
-        return resp.content[0].text

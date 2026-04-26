@@ -93,15 +93,20 @@ export default function MarketplacePage() {
         <div className="space-y-3">
           {deals.length === 0 && <p className="text-gray-500">No deals closed yet.</p>}
           {deals.map((d) => (
-            <div key={d.deal_id} className="bg-gray-900 rounded-xl p-4 flex justify-between">
+            <a
+              key={d.deal_id}
+              href={`/marketplace/negotiations/${d.negotiation_id}`}
+              className="bg-gray-900 rounded-xl p-4 flex justify-between hover:bg-gray-800 transition cursor-pointer"
+            >
               <div>
                 <p className="font-semibold">{d.item}</p>
                 <p className="text-xs text-gray-500">
                   Buyer #{d.buyer_id} ← Seller #{d.seller_id}
                 </p>
+                <p className="text-xs text-blue-400 mt-1">View transcript →</p>
               </div>
               <p className="text-green-400 font-bold">${d.final_price}</p>
-            </div>
+            </a>
           ))}
         </div>
       )}

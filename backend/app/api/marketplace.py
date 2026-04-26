@@ -1,31 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models import User, Run, Listing, Item, Negotiation, Message, Deal
-from app.services.market_engine import run_agent_turn, build_market_context
+from app.schemas import RunOut, ListingOut, DealOut, NegotiationOut
 
 router = APIRouter(prefix="/marketplace", tags=["marketplace"])
 
 
-@router.get("/runs")
+@router.get("/runs", response_model=list[RunOut])
 def list_runs(db: Session = Depends(get_db)):
     runs = db.query(Run).all()
-    return [
-        {
-            "id": r.id,
-            "name": r.name,
-            "model_assignment": r.model_assignment,
-            "is_public": r.is_public,
-            "status": r.status,
-            "start_at": r.start_at,
-            "end_at": r.end_at,
-        }
-        for r in runs
-        if r.is_public
-    ]
+    return [RunOut.model_validate(r) for r in runs if r.is_public]
 
 
 @router.get("/runs/{run_id}/listings")
@@ -61,6 +48,7 @@ def get_deals(run_id: int, db: Session = Depends(get_db)):
     return [
         {
             "deal_id": d.id,
+            "negotiation_id": d.negotiation_id,
             "item": d.negotiation.listing.item.name,
             "buyer_id": d.negotiation.buyer_id,
             "seller_id": d.negotiation.seller_id,
