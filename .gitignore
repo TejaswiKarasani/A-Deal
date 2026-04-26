@@ -20,8 +20,10 @@ node_modules/
 .next/
 out/
 
-# Temp / extracted text
-*.txt
+# Temp / extracted text (PDF dumps)
+*-extracted.txt
+anthropic-doc.txt
+project-deal.txt
 
 # OS
 .DS_Store

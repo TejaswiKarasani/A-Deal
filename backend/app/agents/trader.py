@@ -7,15 +7,9 @@ and asks it to choose an action: post, bid, counter, accept, reject, or pass.
 import json
 import re
 
-import anthropic
-
-from app.config import settings
+from app.llm import llm
 from app.agents.prompts import build_trader_system_prompt
 
-
-client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-
-# Action types the agent can return
 VALID_ACTIONS = {"post", "bid", "counter", "accept", "reject", "pass"}
 
 
@@ -23,7 +17,7 @@ def decide_action(
     system_prompt: str,
     market_context: str,
     negotiation_history: list[dict] | None = None,
-    model: str | None = None,
+    model: str | None = None,  # kept for API compat; active provider's trader model is used
 ) -> dict:
     """
     Ask the trading agent to decide its next action.
@@ -36,8 +30,6 @@ def decide_action(
         "message": str,
     }
     """
-    used_model = model or settings.default_agent_model
-
     context_message = f"""
 Current marketplace state:
 {market_context}
@@ -52,15 +44,11 @@ Decide your next action. Respond ONLY with a JSON object in this format:
   "message": "<your message to the other party, or your listing text>"
 }}
 """
-
-    response = client.messages.create(
-        model=used_model,
+    text = llm.decide(
+        system_prompt,
+        [{"role": "user", "content": context_message}],
         max_tokens=512,
-        system=system_prompt,
-        messages=[{"role": "user", "content": context_message}],
     )
-
-    text = response.content[0].text
     return _parse_action(text)
 
 
@@ -74,7 +62,6 @@ def _parse_action(text: str) -> dict:
             return action
         except json.JSONDecodeError:
             pass
-
     return {"action": "pass", "target_listing_id": None, "offer_price": None, "message": ""}
 
 

@@ -2,13 +2,8 @@ import json
 import re
 from typing import AsyncGenerator
 
-import anthropic
-
-from app.config import settings
+from app.llm import llm
 from app.agents.prompts import ONBOARDING_SYSTEM_PROMPT
-
-
-client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
 async def stream_interview_turn(
@@ -17,15 +12,8 @@ async def stream_interview_turn(
 ) -> AsyncGenerator[str, None]:
     """Stream the interviewer's next response given the conversation so far."""
     messages = conversation_history + [{"role": "user", "content": user_message}]
-
-    with client.messages.stream(
-        model=settings.interviewer_model,
-        max_tokens=1024,
-        system=ONBOARDING_SYSTEM_PROMPT,
-        messages=messages,
-    ) as stream:
-        for text in stream.text_stream:
-            yield text
+    async for chunk in llm.stream(ONBOARDING_SYSTEM_PROMPT, messages, max_tokens=1024):
+        yield chunk
 
 
 def conduct_interview_turn(
@@ -34,19 +22,12 @@ def conduct_interview_turn(
 ) -> str:
     """Non-streaming single turn for the onboarding interview."""
     messages = conversation_history + [{"role": "user", "content": user_message}]
-
-    response = client.messages.create(
-        model=settings.interviewer_model,
-        max_tokens=1024,
-        system=ONBOARDING_SYSTEM_PROMPT,
-        messages=messages,
-    )
-    return response.content[0].text
+    return llm.chat(ONBOARDING_SYSTEM_PROMPT, messages, max_tokens=1024)
 
 
 def extract_profile_from_conversation(conversation_history: list[dict]) -> dict | None:
     """
-    Ask the interviewer to extract the structured profile from a completed conversation.
+    Ask the model to extract the structured profile from a completed conversation.
     Returns None if the profile is not yet complete.
     """
     extraction_prompt = (
@@ -54,14 +35,7 @@ def extract_profile_from_conversation(conversation_history: list[dict]) -> dict 
         "Extract the user's full profile and output ONLY the JSON block, nothing else."
     )
     messages = conversation_history + [{"role": "user", "content": extraction_prompt}]
-
-    response = client.messages.create(
-        model=settings.interviewer_model,
-        max_tokens=2048,
-        system=ONBOARDING_SYSTEM_PROMPT,
-        messages=messages,
-    )
-    text = response.content[0].text
+    text = llm.extract(ONBOARDING_SYSTEM_PROMPT, messages, max_tokens=2048)
 
     match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
     if match:
